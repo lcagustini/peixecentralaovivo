@@ -13,6 +13,8 @@
 #include <glm/mat4x4.hpp> // glm::mat4
 #include <glm/gtc/matrix_transform.hpp> // glm::translate, glm::rotate, glm::scale, glm::perspective
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 #include <iostream>
 #include <vector>
@@ -82,6 +84,14 @@ void loadShaders(){
     char *vertexShaderCode = load_file("src/shaders/vertex.glsl");
     char *fragShaderCode = load_file("src/shaders/frag.glsl");
 
+    if(vertexShaderCode == NULL || fragShaderCode == NULL){
+        if(vertexShaderCode != NULL)
+            free(vertexShaderCode);
+        if(fragShaderCode != NULL)
+            free(fragShaderCode);
+        return;
+    }
+
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     GLuint fragShader = glCreateShader(GL_FRAGMENT_SHADER);
     if(program) glDeleteProgram(program);
@@ -94,18 +104,21 @@ void loadShaders(){
     char buffer[255] = {};
     GLsizei length;
     glGetShaderInfoLog(vertexShader, 254, &length, buffer);
-    printf("%s\n", buffer);
+    if(strlen(buffer) > 0)
+        printf("%s\n", buffer);
 
     glCompileShader(fragShader);
     glGetShaderInfoLog(fragShader, 254, &length, buffer);
-    printf("%s\n", buffer);
+    if(strlen(buffer) > 0)
+        printf("%s\n", buffer);
 
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragShader);
 
     glLinkProgram(program);
     glGetProgramInfoLog(program, 254, &length, buffer);
-    printf("%s\n", buffer);
+    if(strlen(buffer) > 0)
+        printf("%s\n", buffer);
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragShader);
@@ -150,33 +163,26 @@ int main(void)
 
     vector<Fish*> fishes;
 
-    Fish *fish = new Fish();
-
-    fish->model = new Model("models/fish2.obj", "models/fish_texture.png");
-    fish->position = glm::vec3(0,0,0);
-    fish->angle = glm::vec3(1,0,0);
-    fish->scale = 0.3;
-    fish->speed = 1;
-
-    fishes.push_back(fish);
-/*
-    for(int i = 0; i < 10; i++){
+    Model *fishModel = new Model("models/fish2.obj", "models/fish_texture.png");
+    for(int i = 0; i < 1000; i++){
         Fish *fish = new Fish();
 
-        fish->model = new Model("models/fish.obj", "models/fish_texture.png");
+        fish->model = fishModel;
         fish->position = glm::vec3(rand() % 20 +10, rand() % 10 -5, 0);
-        fish->angle = glm::vec2(1,0);
+        //vec2.x = around x axis, vec2.y = around y axis
+        fish->angle = glm::vec2(0,0);
+        fish->targetAngle = fish->angle;
         fish->scale = 0.3;
         fish->speed = (rand() % 800 +200)/300.0;
+        fish->timeSinceAction = 0;
 
         fishes.push_back(fish);
     }
-*/
+
     GLuint vbo;
     GLuint ebo;
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &ebo);
-
 
     float deltaTime = 0.0f;	// Time between current frame and last frame
     float lastFrame = 0.0f; // Time of last frame
@@ -234,18 +240,36 @@ int main(void)
         for(int j = 0; j < fishes.size(); j++){
             Fish *fish = fishes[j];
 
+            fish->timeSinceAction += deltaTime;
+            if(fish->timeSinceAction > 3){
+                fish->timeSinceAction -= 3;
+                fish->targetAngle = glm::vec2(M_PI * ((float)rand())/RAND_MAX -M_PI/2, 2*M_PI * ((float)rand())/RAND_MAX);
+            }
+
+            float turningSpeed = 0.1 * deltaTime;
+            if(fish->targetAngle.x != fish->angle.x && fish->targetAngle.y != fish->angle.y){
+                if(fish->targetAngle.x > fish->angle.x)
+                    fish->angle.x += turningSpeed;
+                if(fish->targetAngle.x < fish->angle.x)
+                    fish->angle.x -= turningSpeed;
+                if(fish->targetAngle.y > fish->angle.y)
+                    fish->angle.y += turningSpeed;
+                if(fish->targetAngle.y < fish->angle.y)
+                    fish->angle.y -= turningSpeed;
+            }
+
             glm::mat4 model;
-            //model = glm::lookAt(fish->position, fish->angle, glm::vec3(0,1,0));
             model = glm::translate(model, fish->position);
-            model = glm::rotate(model, atan2(sqrt(fish->angle.z * fish->angle.z + fish->angle.x * fish->angle.x), fish->angle.y), glm::vec3(0,1,0));
-            model = glm::rotate(model, atan2(sqrt(fish->angle.z * fish->angle.z + fish->angle.y * fish->angle.y), fish->angle.x), glm::vec3(1,0,0));
+            glm::mat4 aux = glm::toMat4(glm::angleAxis(fish->angle.y, glm::vec3(0,1,0)));
+            model = model * aux;
+            aux = glm::toMat4(glm::angleAxis(fish->angle.x, glm::vec3(1,0,0)));
+            model = model * aux;
             model = glm::scale(model, glm::vec3(fish->scale, fish->scale, fish->scale));
 
             uniformLoc = glGetUniformLocation(program, "model");
             glUniformMatrix4fv(uniformLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-            //fish->angle += deltaTime * glm::vec3(0,0,-1);
-            fish->position += deltaTime * glm::vec3(0,0,-1);
+            fish->position += (deltaTime * fish->speed) * glm::vec3(sin(fish->angle.y)*cos(fish->angle.x), -sin(fish->angle.x), cos(fish->angle.y)*cos(fish->angle.x));
 
             for(int i = 0; i < fish->model->meshes.size(); i++){
                 glActiveTexture(GL_TEXTURE0);

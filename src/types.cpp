@@ -194,7 +194,9 @@ class Model
 struct Fish {
     glm::vec3 position;
     Model *model;
-    glm::vec3 angle;
+    glm::vec2 angle;
+    glm::vec2 targetAngle;
+    float timeSinceAction;
     double scale;
-    double speed;
+    float speed;
 };

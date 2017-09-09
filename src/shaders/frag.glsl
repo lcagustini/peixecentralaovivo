@@ -10,7 +10,7 @@ in vec3 fragpos;
 in vec2 fragtexturecoords;
 
 void main(){
-    vec3 lightColor = vec3(1.0, 0.0, 0.5);
+    vec3 lightColor = vec3(0.0, 0.5, 0.9);
 
     vec3 lightDir = normalize(lightPos - fragpos);
     vec3 norm = normalize(fragnormal);
