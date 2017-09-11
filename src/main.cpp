@@ -57,29 +57,6 @@ char* load_file(char const* path)
     return buffer;
 }
 
-Camera *createCamera(glm::vec3 const & Translate, glm::vec2 const & Rotate, float speed, float sensibility)
-{
-    Camera *camera = new Camera();
-
-    camera->speed = speed;
-    camera->sensibility = sensibility;
-
-    glm::mat4 Projection = glm::perspective(glm::radians(45.0f), 4.0f / 3.0f, 0.1f, 100.f);
-    glm::mat4 View;
-    View = glm::rotate(View, Rotate.y, glm::vec3(-1.0f, 0.0f, 0.0f));
-    View = glm::rotate(View, Rotate.x, glm::vec3(0.0f, 1.0f, 0.0f));
-    View = glm::translate(View, -Translate);
-
-    camera->transform = Projection * View;
-    camera->angle = Rotate;
-    camera->translate = Translate;
-
-    glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-    camera->cameraRight = glm::normalize(glm::cross(up, camera->translate));
-    camera->cameraUp = glm::cross(camera->translate, camera->cameraRight);
-    return camera;
-}
-
 void loadShaders(){
     char *vertexShaderCode = load_file("src/shaders/vertex.glsl");
     char *fragShaderCode = load_file("src/shaders/frag.glsl");
@@ -158,7 +135,17 @@ int main(void)
     double xpos, ypos;
     glfwGetCursorPos(window, &xpos, &ypos);
     
-    Camera *camera = createCamera(glm::vec3(0,0,10), glm::vec2(0,0), 5, 0.1);
+    glm::mat4 Projection = glm::perspective(glm::radians(45.0f), 4.0f / 3.0f, 0.1f, 100.f);
+
+    Camera camera;
+    camera.position = glm::vec3(0,0,0);
+    camera.up = glm::vec3(0,1,0);
+    camera.front = glm::vec3(0,0,-1);
+    camera.angle = glm::vec2(1.6, 0);
+    camera.transform = Projection * glm::lookAt(camera.position, camera.position + camera.front, camera.up);
+    camera.speed = 3;
+    camera.sensibility = 0.01;
+
     glm::vec3 lightPos = glm::vec3(10.0, 5.0, 0.0);
 
     vector<Fish*> fishes;
@@ -168,16 +155,18 @@ int main(void)
         Fish *fish = new Fish();
 
         fish->model = fishModel;
-        fish->position = glm::vec3(rand() % 20 +10, rand() % 10 -5, 0);
+        fish->position = glm::vec3(rand() % 20 -10, rand() % 10 -5, 0);
         //vec2.x = around x axis, vec2.y = around y axis
         fish->angle = glm::vec2(0,0);
         fish->targetAngle = fish->angle;
-        fish->scale = 0.3;
+        fish->scale = 0.2 + ((float)rand())/RAND_MAX * 0.3;
         fish->speed = (rand() % 800 +200)/300.0;
         fish->timeSinceAction = 0;
 
         fishes.push_back(fish);
     }
+
+    Model *aquarioModel = new Model("models/aquario.obj", "models/fish_texture.png");
 
     GLuint vbo;
     GLuint ebo;
@@ -201,52 +190,80 @@ int main(void)
             loadShaders();
         }
         //printf("FPS: %f\n", 1/deltaTime);
-
+        
         double newxpos, newypos;
         glfwGetCursorPos(window, &newxpos, &newypos);
-        double difx = newxpos - xpos;
+        double dirx = (newxpos - xpos) * camera.sensibility;
+        double diry = (newypos - ypos) * camera.sensibility;
         xpos = newxpos;
-        double dify = newypos - ypos;
         ypos = newypos;
 
-        if(glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-            camera->translate += (-camera->speed * deltaTime) * glm::normalize(camera->translate);
-        if(glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-            camera->translate += (camera->speed * deltaTime) * glm::normalize(camera->translate);
-        if(glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-            camera->translate += (-camera->speed * deltaTime) * glm::normalize(camera->cameraRight);
-        if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-            camera->translate += (camera->speed * deltaTime) * glm::normalize(camera->cameraRight);
+        camera.angle.x += dirx;
+        camera.angle.y -= diry;
 
-        Camera *ncamera = createCamera(camera->translate, camera->angle + glm::vec2(camera->sensibility*deltaTime*difx, -camera->sensibility*deltaTime*dify), 5, 0.1);
-        delete camera;
-        camera = ncamera;
+        if(camera.angle.y > 1.5)
+            camera.angle.y = 1.5;
+        if(camera.angle.y < -1.5)
+            camera.angle.y = -1.5;
+
+        if(glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.position += (camera.speed * deltaTime) * camera.front;
+        if(glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.position -= (camera.speed * deltaTime) * camera.front;
+        if(glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.position -= glm::normalize(glm::cross(camera.front, camera.up)) * (camera.speed * deltaTime);
+        if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.position += glm::normalize(glm::cross(camera.front, camera.up)) * (camera.speed * deltaTime);
+
+        glm::vec3 front;
+        front.x = cos(camera.angle.x) * cos(camera.angle.y);
+        front.y = sin(camera.angle.y);
+        front.z = sin(camera.angle.x) * cos(camera.angle.y);
+        camera.front = glm::normalize(front);
+
+        camera.up = glm::normalize(glm::cross(glm::cross(camera.front, glm::vec3(0,1,0)), camera.front));
+
+        camera.transform = Projection * glm::lookAt(camera.position, camera.position + camera.front, camera.up);
 
         if(glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
             lightPos += glm::vec3(0.1, 0.0, 0.0);
 
         glEnable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glEnable(GL_CULL_FACE);
+
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         /* Render here */
         glClearColor(0.1, 0.1, 0.1, 1.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(program);
 
         GLuint uniformLoc = glGetUniformLocation(program, "view");
-        glUniformMatrix4fv(uniformLoc, 1, GL_FALSE, glm::value_ptr(camera->transform));
+        glUniformMatrix4fv(uniformLoc, 1, GL_FALSE, glm::value_ptr(camera.transform));
         
         uniformLoc = glGetUniformLocation(program, "lightPos");
         glUniform3fv(uniformLoc, 1, glm::value_ptr(lightPos));
 
+        uniformLoc = glGetUniformLocation(program, "alpha");
+        glUniform1f(uniformLoc, 1);
         for(int j = 0; j < fishes.size(); j++){
             Fish *fish = fishes[j];
 
+            glm::vec3 targetPos = glm::vec3(0,0,0);
+            glm::vec3 targetDir = glm::normalize(targetPos - fish->position);
+            fish->targetAngle = glm::vec2(atan(targetDir.x/targetDir.z), acos(targetDir.y));
+            if(targetDir.x < 0)
+                fish->targetAngle.x += M_PI;
+
+            /*
             fish->timeSinceAction += deltaTime;
             if(fish->timeSinceAction > 3){
                 fish->timeSinceAction -= 3;
                 fish->targetAngle = glm::vec2(M_PI * ((float)rand())/RAND_MAX -M_PI/2, 2*M_PI * ((float)rand())/RAND_MAX);
             }
+            */
 
-            float turningSpeed = 0.1 * deltaTime;
+            float turningSpeed = 0.3 * deltaTime;
             if(fish->targetAngle.x != fish->angle.x && fish->targetAngle.y != fish->angle.y){
                 if(fish->targetAngle.x > fish->angle.x)
                     fish->angle.x += turningSpeed;
@@ -279,6 +296,26 @@ int main(void)
                 glDrawElements(GL_TRIANGLES, fish->model->meshes[i].indices.size(), GL_UNSIGNED_INT, (void*) 0);
                 glBindVertexArray(0);
             }
+        }
+
+        //glDisable(GL_CULL_FACE);
+
+        uniformLoc = glGetUniformLocation(program, "alpha");
+        glUniform1f(uniformLoc, 0.6);
+
+        glm::mat4 model;
+        model = glm::scale(model, glm::vec3(4,4,4));
+
+        uniformLoc = glGetUniformLocation(program, "model");
+        glUniformMatrix4fv(uniformLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+        for(int i = 0; i < aquarioModel->meshes.size(); i++){
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, aquarioModel->meshes[i].textures[0]);
+
+            glBindVertexArray(aquarioModel->meshes[i].VAO);
+            glDrawElements(GL_TRIANGLES, aquarioModel->meshes[i].indices.size(), GL_UNSIGNED_INT, (void*) 0);
+            glBindVertexArray(0);
         }
 
         /* Swap front and back buffers */

@@ -6,10 +6,9 @@ struct Vertex {
 
 struct Camera {
     glm::mat4 transform;
+    glm::vec3 position;
+    glm::vec3 front, up;
     glm::vec2 angle;
-    glm::vec3 translate;
-    glm::vec3 cameraRight;
-    glm::vec3 cameraUp;
     float speed, sensibility;
 };
 
