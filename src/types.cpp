@@ -12,6 +12,36 @@ struct Camera {
     float speed, sensibility;
 };
 
+struct Box {
+    glm::vec3 position;
+    glm::vec3 size;
+
+    void allPoints(glm::vec3 *points){
+        points = (glm::vec3 *) malloc(8 * sizeof(glm::vec3));
+
+        points[0] = glm::vec3(this->position.x - this->size.x/2, this->position.y - this->size.y/2, this->position.z - this->size.z/2);
+        points[1] = glm::vec3(this->position.x - this->size.x/2, this->position.y - this->size.y/2, this->position.z + this->size.z/2);
+        points[2] = glm::vec3(this->position.x - this->size.x/2, this->position.y + this->size.y/2, this->position.z - this->size.z/2);
+        points[3] = glm::vec3(this->position.x - this->size.x/2, this->position.y + this->size.y/2, this->position.z + this->size.z/2);
+        points[4] = glm::vec3(this->position.x + this->size.x/2, this->position.y - this->size.y/2, this->position.z - this->size.z/2);
+        points[5] = glm::vec3(this->position.x + this->size.x/2, this->position.y - this->size.y/2, this->position.z + this->size.z/2);
+        points[6] = glm::vec3(this->position.x + this->size.x/2, this->position.y + this->size.y/2, this->position.z - this->size.z/2);
+        points[7] = glm::vec3(this->position.x + this->size.x/2, this->position.y + this->size.y/2, this->position.z + this->size.z/2);
+    }
+    
+    bool contains(glm::vec3 point)
+    {
+        if (point.x > this->position.x - this->size.x/2 && point.x < this->position.x + this->size.x/2 &&
+            point.y > this->position.y - this->size.y/2 && point.y < this->position.y + this->size.y/2 &&
+            point.z > this->position.z - this->size.z/2 && point.z < this->position.z + this->size.z/2)
+        {
+            return true;
+        }
+
+        return false;
+    }
+};
+
 class Mesh {
     public:
         /*  Mesh Data  */
@@ -195,7 +225,8 @@ struct Fish {
     Model *model;
     glm::vec2 angle;
     glm::vec2 targetAngle;
-    float timeSinceAction;
+    glm::vec3 targetPos;
+    int rotationType;
     double scale;
     float speed;
 };

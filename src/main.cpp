@@ -27,6 +27,7 @@
 using namespace std;
 
 GLuint program;
+GLuint uiProgram;
 
 #include "types.cpp"
 
@@ -60,8 +61,14 @@ char* load_file(char const* path)
 void loadShaders(){
     char *vertexShaderCode = load_file("src/shaders/vertex.glsl");
     char *fragShaderCode = load_file("src/shaders/frag.glsl");
+    char *uiFragShaderCode = load_file("src/shaders/uifrag.glsl");
+    char *uiVertexShaderCode = load_file("src/shaders/uivertex.glsl");
 
-    if(vertexShaderCode == NULL || fragShaderCode == NULL){
+    if(vertexShaderCode == NULL || fragShaderCode == NULL || uiVertexShaderCode == NULL || uiFragShaderCode == NULL){
+        if(uiFragShaderCode != NULL)
+            free(uiFragShaderCode);
+        if(uiVertexShaderCode != NULL)
+            free(uiVertexShaderCode);
         if(vertexShaderCode != NULL)
             free(vertexShaderCode);
         if(fragShaderCode != NULL)
@@ -101,6 +108,41 @@ void loadShaders(){
     glDeleteShader(fragShader);
     free(vertexShaderCode);
     free(fragShaderCode);
+
+    GLuint uiVertexShader = glCreateShader(GL_VERTEX_SHADER);
+    GLuint uiFragShader = glCreateShader(GL_FRAGMENT_SHADER);
+    if(uiProgram) glDeleteProgram(uiProgram);
+    uiProgram = glCreateProgram();
+
+    glShaderSource(uiVertexShader, 1, &uiVertexShaderCode, NULL);
+    glShaderSource(uiFragShader, 1, &uiFragShaderCode, NULL);
+
+    glCompileShader(uiVertexShader);
+    {
+        char buffer[255] = {};
+        GLsizei length;
+        glGetShaderInfoLog(uiVertexShader, 254, &length, buffer);
+        if(strlen(buffer) > 0)
+            printf("%s\n", buffer);
+
+        glCompileShader(uiFragShader);
+        glGetShaderInfoLog(uiFragShader, 254, &length, buffer);
+        if(strlen(buffer) > 0)
+            printf("%s\n", buffer);
+
+        glAttachShader(uiProgram, uiVertexShader);
+        glAttachShader(uiProgram, uiFragShader);
+
+        glLinkProgram(uiProgram);
+        glGetProgramInfoLog(uiProgram, 254, &length, buffer);
+        if(strlen(buffer) > 0)
+            printf("%s\n", buffer);
+
+        glDeleteShader(uiVertexShader);
+        glDeleteShader(uiFragShader);
+        free(uiVertexShaderCode);
+        free(uiFragShaderCode);
+    }
 }
 
 int main(void)
@@ -138,7 +180,7 @@ int main(void)
     glm::mat4 Projection = glm::perspective(glm::radians(45.0f), 4.0f / 3.0f, 0.1f, 100.f);
 
     Camera camera;
-    camera.position = glm::vec3(0,0,0);
+    camera.position = glm::vec3(0,0,-35);
     camera.up = glm::vec3(0,1,0);
     camera.front = glm::vec3(0,0,-1);
     camera.angle = glm::vec2(1.6, 0);
@@ -146,32 +188,34 @@ int main(void)
     camera.speed = 3;
     camera.sensibility = 0.01;
 
-    glm::vec3 lightPos = glm::vec3(10.0, 5.0, 0.0);
+    glm::vec3 lightPos = glm::vec3(0.0, 0.0, 0.0);
 
     vector<Fish*> fishes;
 
+    Model *aquarioModel = new Model("models/aquario.obj", "models/fish_texture.png");
+    Box aquario;
+    aquario.position = glm::vec3(0,0,0);
+    aquario.size = glm::vec3(5,5,5);
+
     Model *fishModel = new Model("models/fish2.obj", "models/fish_texture.png");
-    for(int i = 0; i < 1000; i++){
+    for(int i = 0; i < 5; i++){
         Fish *fish = new Fish();
 
         fish->model = fishModel;
-        fish->position = glm::vec3(rand() % 20 -10, rand() % 10 -5, 0);
+        //fish->position = glm::vec3(rand() % 6 -3, rand() % 6 -3, rand() % 6 -3);
+        fish->position = glm::vec3(rand() % 4 -2, rand() % 4 -2, rand() % 4 -2);
         //vec2.x = around x axis, vec2.y = around y axis
         fish->angle = glm::vec2(0,0);
         fish->targetAngle = fish->angle;
+        fish->targetPos = glm::vec3(((float)rand()/RAND_MAX * aquario.size.x - aquario.size.x/2) * 0.7,
+                                    ((float)rand()/RAND_MAX * aquario.size.y - aquario.size.y/2) * 0.7,
+                                    ((float)rand()/RAND_MAX * aquario.size.z - aquario.size.z/2) * 0.7);
+        fish->rotationType = rand() % 2;
         fish->scale = 0.2 + ((float)rand())/RAND_MAX * 0.3;
         fish->speed = (rand() % 800 +200)/300.0;
-        fish->timeSinceAction = 0;
 
         fishes.push_back(fish);
     }
-
-    Model *aquarioModel = new Model("models/aquario.obj", "models/fish_texture.png");
-
-    GLuint vbo;
-    GLuint ebo;
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
 
     float deltaTime = 0.0f;	// Time between current frame and last frame
     float lastFrame = 0.0f; // Time of last frame
@@ -249,31 +293,33 @@ int main(void)
         for(int j = 0; j < fishes.size(); j++){
             Fish *fish = fishes[j];
 
-            glm::vec3 targetPos = glm::vec3(0,0,0);
-            glm::vec3 targetDir = glm::normalize(targetPos - fish->position);
-            fish->targetAngle = glm::vec2(atan(targetDir.x/targetDir.z), acos(targetDir.y));
-            if(targetDir.x < 0)
-                fish->targetAngle.x += M_PI;
+            glm::vec3 targetDir = glm::normalize(fish->targetPos - fish->position);
+            if(targetDir.z == 0) targetDir.z = 0.000000001;
+            fish->targetAngle = glm::vec2(acos(targetDir.y) - M_PI/2, atan2(targetDir.x, targetDir.z));
 
-            /*
-            fish->timeSinceAction += deltaTime;
-            if(fish->timeSinceAction > 3){
-                fish->timeSinceAction -= 3;
-                fish->targetAngle = glm::vec2(M_PI * ((float)rand())/RAND_MAX -M_PI/2, 2*M_PI * ((float)rand())/RAND_MAX);
-            }
-            */
-
-            float turningSpeed = 0.3 * deltaTime;
-            if(fish->targetAngle.x != fish->angle.x && fish->targetAngle.y != fish->angle.y){
+            float turningSpeed = 1 * deltaTime;
+            if(abs(fish->targetAngle.x - fish->angle.x) > 0.2 || abs(fish->targetAngle.y - fish->angle.y) > 0.2){
+                if(M_PI < fish->targetAngle.y - fish->angle.y && fish->targetAngle.y - fish->angle.y < M_PI){
+                    if(fish->rotationType)
+                        fish->angle.y += turningSpeed;
+                    else
+                        fish->angle.y -= turningSpeed;
+                }
+                else{
+                    if(fish->rotationType)
+                        fish->angle.y -= turningSpeed;
+                    else
+                        fish->angle.y += turningSpeed;
+                }
                 if(fish->targetAngle.x > fish->angle.x)
                     fish->angle.x += turningSpeed;
                 if(fish->targetAngle.x < fish->angle.x)
                     fish->angle.x -= turningSpeed;
-                if(fish->targetAngle.y > fish->angle.y)
-                    fish->angle.y += turningSpeed;
-                if(fish->targetAngle.y < fish->angle.y)
-                    fish->angle.y -= turningSpeed;
             }
+            if(fish->angle.y > M_PI)
+                fish->angle.y -= 2*M_PI;
+            if(fish->angle.y < -M_PI)
+                fish->angle.y += 2*M_PI;
 
             glm::mat4 model;
             model = glm::translate(model, fish->position);
@@ -285,8 +331,22 @@ int main(void)
 
             uniformLoc = glGetUniformLocation(program, "model");
             glUniformMatrix4fv(uniformLoc, 1, GL_FALSE, glm::value_ptr(model));
-
-            fish->position += (deltaTime * fish->speed) * glm::vec3(sin(fish->angle.y)*cos(fish->angle.x), -sin(fish->angle.x), cos(fish->angle.y)*cos(fish->angle.x));
+            
+            glm::vec3 dist = fish->position - fish->targetPos;
+            if(!(abs(dist.x) < 0.1 && abs(dist.y) < 0.1 && abs(dist.z) < 0.1))
+            {
+                glm::vec3 distToWalk = (deltaTime * fish->speed) * glm::vec3(sin(fish->angle.y)*cos(fish->angle.x), -sin(fish->angle.x), cos(fish->angle.y)*cos(fish->angle.x));
+                if (aquario.contains(fish->position + distToWalk))
+                {
+                    fish->position += distToWalk;
+                }
+            }
+            else{
+                fish->targetPos = glm::vec3(((float)rand()/RAND_MAX * aquario.size.x - aquario.size.x/2) * 0.7,
+                                            ((float)rand()/RAND_MAX * aquario.size.y - aquario.size.y/2) * 0.7,
+                                            ((float)rand()/RAND_MAX * aquario.size.z - aquario.size.z/2) * 0.7);
+                fish->rotationType = rand() % 2;
+            }
 
             for(int i = 0; i < fish->model->meshes.size(); i++){
                 glActiveTexture(GL_TEXTURE0);
@@ -298,13 +358,12 @@ int main(void)
             }
         }
 
-        //glDisable(GL_CULL_FACE);
-
         uniformLoc = glGetUniformLocation(program, "alpha");
         glUniform1f(uniformLoc, 0.6);
 
         glm::mat4 model;
-        model = glm::scale(model, glm::vec3(4,4,4));
+        model = glm::translate(model, aquario.position);
+        model = glm::scale(model, aquario.size * 0.65f);
 
         uniformLoc = glGetUniformLocation(program, "model");
         glUniformMatrix4fv(uniformLoc, 1, GL_FALSE, glm::value_ptr(model));
@@ -317,6 +376,51 @@ int main(void)
             glDrawElements(GL_TRIANGLES, aquarioModel->meshes[i].indices.size(), GL_UNSIGNED_INT, (void*) 0);
             glBindVertexArray(0);
         }
+
+        glDisable(GL_CULL_FACE);
+
+        glUseProgram(uiProgram);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glBindVertexArray(0);
+
+        float triangleVertices[] = {
+            -1,1,0,
+            -1,0.95,0,
+            -0.9,0.95,0,
+            -0.9,1,0
+        };
+
+        GLuint indices[] = {0,1,2, 2,3,0};
+        
+        GLuint vao;
+        GLuint vbo;
+        GLuint ebo;
+
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glGenBuffers(1, &ebo);
+
+        glBindVertexArray(vao);
+
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(triangleVertices), triangleVertices, GL_STATIC_DRAW);  
+
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+        // vertex positions
+        GLuint attribLoc = glGetAttribLocation(uiProgram, "position");
+        glEnableVertexAttribArray(attribLoc);	
+        glVertexAttribPointer(attribLoc, 3, GL_FLOAT, GL_FALSE, 3*sizeof(float), (void*)0);
+
+        //attribLoc = glGetAttribLocation(uiProgram, "inColor");
+        //glEnableVertexAttribArray(attribLoc);	
+        //glVertexAttribPointer(attribLoc, 3, GL_FLOAT, GL_FALSE, 6*sizeof(float), (void*)(3*sizeof(float)));
+
+        glBindVertexArray(0);
+        glBindVertexArray(vao);
+
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (void*)0);
 
         /* Swap front and back buffers */
         glfwSwapBuffers(window);
